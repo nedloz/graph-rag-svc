@@ -1,0 +1,14 @@
+fastapi==0.115.8
+uvicorn[standard]==0.34.0
+websockets==14.2
+openai==1.63.2
+python-dotenv==1.0.1
+httpx==0.28.1
+sqlalchemy==2.0.38
+asyncpg==0.30.0
+pgvector==0.3.6
+pydantic==2.10.6
+pydantic-settings==2.7.1
+
+# torch / transformers / accelerate здесь намеренно нет — они нужны только провайдеру
+# LLM_PROVIDER=local и вынесены в requirements-local.txt. Подробности там же.
