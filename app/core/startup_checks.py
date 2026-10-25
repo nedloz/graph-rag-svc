@@ -10,10 +10,10 @@
 
 import asyncio
 import logging
-import re
 
 import httpx
 from sqlalchemy import text
+from sqlalchemy.exc import ProgrammingError
 
 from app.core.config import settings
 from app.core.internal_auth import get_internal_auth_headers
@@ -70,22 +70,24 @@ async def _embedding_service_info() -> dict:
 
 
 async def _column_dimension(schema_table: str, column: str) -> int | None:
-    """Фактическая размерность pgvector-колонки (None — если колонки нет либо тип без размера)."""
-    async with SessionLocal() as session:
-        declared = (
-            await session.execute(
-                text(
-                    "SELECT format_type(atttypid, atttypmod) FROM pg_attribute "
-                    "WHERE attrelid = to_regclass(:rel) AND attname = :col AND NOT attisdropped"
-                ),
-                {"rel": schema_table, "col": column},
-            )
-        ).scalar()
+    """Фактическая размерность pgvector-колонки (None — если колонки нет либо тип без размера).
 
-    if not declared:
-        return None
-    match = re.search(r"\((\d+)\)", declared)
-    return int(match.group(1)) if match else None
+    Сам запрос живёт в БД (core.vector_column_dimension, migrations/007): ту же проверку делает
+    ingest-worker, и две копии в разных репозиториях уже успели разойтись.
+    """
+    try:
+        async with SessionLocal() as session:
+            return (
+                await session.execute(
+                    text("SELECT core.vector_column_dimension(:rel, :col)"),
+                    {"rel": schema_table, "col": column},
+                )
+            ).scalar()
+    except ProgrammingError as exc:
+        raise RuntimeError(
+            "В БД нет функции core.vector_column_dimension(). Примените "
+            "main/infra/db/migrations/007_vector_column_dimension.sql."
+        ) from exc
 
 
 async def verify_embedding_setup() -> None:
