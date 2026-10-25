@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from app.api.graph_admin import router as graph_admin_router
 from app.api.http import router as http_router
 from app.core.config import settings
+from app.core.internal_auth import validate_trusted_tokens
 from app.core.logging import configure_logging
 from app.core.startup_checks import verify_embedding_setup, warn_if_development_only_provider
 from app.db.session import SessionLocal
@@ -21,6 +22,7 @@ app.include_router(graph_admin_router)
 
 @app.on_event("startup")
 async def startup_event() -> None:
+    validate_trusted_tokens()
     # Сверка размерности эмбеддингов до запуска очереди: расхождение модели и схемы БД
     # должно останавливать сервис здесь, а не всплывать невнятной ошибкой pgvector на
     # первом же запросе пользователя.
