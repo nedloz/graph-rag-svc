@@ -14,6 +14,7 @@ import logging
 import httpx
 
 from app.core.config import settings
+from app.mtls import httpx_kwargs
 
 logger = logging.getLogger("graph-rag-svc.ontology.llm_backend")
 
@@ -49,7 +50,8 @@ async def _complete_ollama(messages: list[dict[str, str]]) -> str:
     url = f"{settings.ollama_url.rstrip('/')}/api/chat"
     payload = {"model": model, "messages": messages, "stream": False}
     async with httpx.AsyncClient(
-        timeout=httpx.Timeout(settings.llm_request_timeout_sec, connect=settings.llm_connect_timeout_sec)
+        timeout=httpx.Timeout(settings.llm_request_timeout_sec, connect=settings.llm_connect_timeout_sec),
+        **httpx_kwargs(),
     ) as client:
         response = await client.post(url, json=payload)
         response.raise_for_status()

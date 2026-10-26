@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 
 from app.core.config import settings
+from app.mtls import httpx_kwargs
 
 logger = logging.getLogger("graph-rag-svc.generation.llm_backends")
 
@@ -85,7 +86,7 @@ async def _stream_ollama(messages: list[dict[str, str]], usage: dict[str, Any]):
     url = f"{settings.ollama_url.rstrip('/')}/api/chat"
     payload = {"model": settings.ollama_model, "messages": messages, "stream": True}
     try:
-        async with httpx.AsyncClient(timeout=_http_timeout()) as client:
+        async with httpx.AsyncClient(timeout=_http_timeout(), **httpx_kwargs()) as client:
             async with client.stream("POST", url, json=payload) as resp:
                 if resp.status_code != 200:
                     yield {"type": "error", "content": f"Ollama error {resp.status_code}: {await resp.aread()}"}
