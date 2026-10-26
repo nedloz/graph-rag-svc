@@ -16,7 +16,6 @@ from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
 
 from app.core.config import settings
-from app.core.internal_auth import get_internal_auth_headers
 from app.db.session import SessionLocal
 from app.mtls import httpx_kwargs
 
@@ -49,10 +48,7 @@ async def _embedding_service_info() -> dict:
     for attempt in range(1, settings.embedding_startup_retries + 1):
         try:
             async with httpx.AsyncClient(timeout=30.0, **httpx_kwargs()) as client:
-                response = await client.get(
-                    f"{settings.embedding_svc_url.rstrip('/')}/ping",
-                    headers=get_internal_auth_headers(),
-                )
+                response = await client.get(f"{settings.embedding_svc_url.rstrip('/')}/ping")
                 response.raise_for_status()
                 return response.json()
         except Exception as exc:

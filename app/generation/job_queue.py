@@ -19,7 +19,6 @@ import websockets
 from app.analytics import retrieval_log
 from app.api.schemas import GenerateRequest
 from app.core.config import settings
-from app.core.internal_auth import get_internal_auth_headers
 from app.db.session import SessionLocal
 from app.generation.llm_backends import stream_model
 from app.generation.prompt_builder import build_messages
@@ -86,10 +85,9 @@ class ChatBridge:
         self.ws = None
 
     async def _run(self) -> None:
-        headers = get_internal_auth_headers()
         while not self.stop_event.is_set():
             try:
-                async with websockets.connect(settings.chat_ws_url, additional_headers=headers, ping_interval=20, ping_timeout=20, **_tls_kwargs()) as ws:
+                async with websockets.connect(settings.chat_ws_url, ping_interval=20, ping_timeout=20, **_tls_kwargs()) as ws:
                     self.ws = ws
                     self.connected.set()
                     logger.info("Connected to chat-svc internal websocket")

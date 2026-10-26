@@ -5,12 +5,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     service_name: str = "graph-rag-svc"
-    service_token: str = "change-me"
 
-    internal_auth_enabled: bool = True
-    internal_auth_header_name: str = "X-Service-Token"
-    internal_service_name_header: str = "X-Service-Name"
-    trusted_service_tokens: str = "{}"
+    internal_auth_mode: str = "mtls"
 
     app_name: str = "graph-rag-svc"
     app_host: str = "0.0.0.0"

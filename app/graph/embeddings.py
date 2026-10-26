@@ -13,7 +13,6 @@ verified against the DB columns at startup (app/core/startup_checks.py).
 import httpx
 
 from app.core.config import settings
-from app.core.internal_auth import get_internal_auth_headers
 from app.mtls import httpx_kwargs
 
 
@@ -25,7 +24,6 @@ async def embed_texts_with_model(texts: list[str]) -> tuple[list[list[float]], s
         response = await client.post(
             f"{settings.embedding_svc_url.rstrip('/')}/embed",
             json={"texts": texts, "normalize": True},
-            headers=get_internal_auth_headers(),
         )
         response.raise_for_status()
         data = response.json()
