@@ -24,9 +24,21 @@ from app.db.session import SessionLocal
 from app.generation.llm_backends import stream_model
 from app.generation.prompt_builder import build_messages
 from app.generation.sinks import Sink
+from app.mtls import ssl_context
 from app.retrieval.orchestrator import retrieve
 
 logger = logging.getLogger("graph-rag-svc.generation.job_queue")
+
+
+
+def _tls_kwargs() -> dict[str, Any]:
+    """Клиентский сертификат для WebSocket в chat-svc (app/mtls.py); {} без mTLS.
+
+    Контекст собирается при каждом подключении, а подключение переустанавливается в цикле
+    _run при обрыве, так что обновлённый суточный сертификат подхватывается без перезапуска.
+    """
+    ctx = ssl_context()
+    return {"ssl": ctx} if ctx is not None else {}
 
 
 class ChatBridge:
@@ -77,7 +89,7 @@ class ChatBridge:
         headers = get_internal_auth_headers()
         while not self.stop_event.is_set():
             try:
-                async with websockets.connect(settings.chat_ws_url, additional_headers=headers, ping_interval=20, ping_timeout=20) as ws:
+                async with websockets.connect(settings.chat_ws_url, additional_headers=headers, ping_interval=20, ping_timeout=20, **_tls_kwargs()) as ws:
                     self.ws = ws
                     self.connected.set()
                     logger.info("Connected to chat-svc internal websocket")

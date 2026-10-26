@@ -1311,7 +1311,7 @@ CRUD по любым таблицам любой схемы. **Решено де
 
 ## Вызовы других сервисов по mTLS
 
-Так graph-rag-svc вызывает embedding-svc (`/embed`, стартовая проверка `/ping`). Сам graph-rag-svc при включённом mTLS слушает только `127.0.0.1`, а наружу смотрит прокси на порту 8443, пропускающий chat-svc (`/generate`, `/cancel`) и db-svc (`/internal/graph/*`).
+Так graph-rag-svc вызывает embedding-svc (`/embed`, стартовая проверка `/ping`) и подключается к chat-svc по внутреннему WebSocket (`CHAT_WS_URL=wss://chat-svc:8443/ws/internal/llm`; контекст TLS собирается заново при каждом подключении). Сам graph-rag-svc при включённом mTLS слушает только `127.0.0.1`, а наружу смотрит прокси на порту 8443, пропускающий chat-svc (`/generate`, `/cancel`) и db-svc (`/internal/graph/*`).
 
 Если заданы `SERVICE_MTLS_CERT`, `SERVICE_MTLS_KEY` и `SERVICE_MTLS_CA`, сервис предъявляет свой
 сертификат внутреннего CA (CN равен имени сервиса) и проверяет сервер. Контекст TLS собирается в
