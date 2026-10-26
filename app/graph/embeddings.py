@@ -14,13 +14,14 @@ import httpx
 
 from app.core.config import settings
 from app.core.internal_auth import get_internal_auth_headers
+from app.mtls import httpx_kwargs
 
 
 async def embed_texts_with_model(texts: list[str]) -> tuple[list[list[float]], str]:
     if not texts:
         return [], ""
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=60.0, **httpx_kwargs()) as client:
         response = await client.post(
             f"{settings.embedding_svc_url.rstrip('/')}/embed",
             json={"texts": texts, "normalize": True},

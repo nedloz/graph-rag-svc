@@ -18,6 +18,7 @@ from sqlalchemy.exc import ProgrammingError
 from app.core.config import settings
 from app.core.internal_auth import get_internal_auth_headers
 from app.db.session import SessionLocal
+from app.mtls import httpx_kwargs
 
 logger = logging.getLogger("graph-rag-svc.core.startup_checks")
 
@@ -47,7 +48,7 @@ async def _embedding_service_info() -> dict:
     last_error: Exception | None = None
     for attempt in range(1, settings.embedding_startup_retries + 1):
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=30.0, **httpx_kwargs()) as client:
                 response = await client.get(
                     f"{settings.embedding_svc_url.rstrip('/')}/ping",
                     headers=get_internal_auth_headers(),
