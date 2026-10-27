@@ -1,4 +1,6 @@
-"""CLI entrypoint for the offline graph-builder.
+"""DISABLED: GraphRAG отключён (спецификация 2026-10-27-notebook-pipeline-design). Код не поддерживается и не вызывается.
+
+CLI entrypoint for the offline graph-builder.
 
 Usage (inside the container):
     python -m cli.build_graph --full-rebuild

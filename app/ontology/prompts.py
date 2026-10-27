@@ -1,4 +1,6 @@
-"""Prompt templates for the shared ontology-extraction module (app/ontology/extractor.py).
+"""DISABLED: GraphRAG отключён (спецификация 2026-10-27-notebook-pipeline-design). Код не поддерживается и не вызывается.
+
+Prompt templates for the shared ontology-extraction module (app/ontology/extractor.py).
 
 Ported from research/GetTripletsFromChunks.ipynb's `llm_request()` system prompt, with
 two variants: extraction over a window of document chunks (offline graph-builder), and

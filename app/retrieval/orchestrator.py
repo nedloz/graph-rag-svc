@@ -1,4 +1,4 @@
-"""Ties judge -> graph/vector retriever -> context_assembler together into the single
+"""Ties judge -> vector retriever -> context_assembler together (GraphRAG отключён) into the single
 `retrieve()` call app/generation/job_queue.py's process_job makes before generation.
 """
 
@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.metrics import CONTEXT_CHUNKS, EMPTY_CONTEXT, JUDGE_DECISIONS, STAGE_DURATION
 from app.api.schemas import HistoryMessage
-from app.retrieval import context_assembler, graph_retriever, judge, vector_retriever
+from app.retrieval import context_assembler, judge, vector_retriever
 
 logger = logging.getLogger("graph-rag-svc.retrieval.orchestrator")
 
@@ -26,17 +26,7 @@ async def retrieve(
     route_used = chosen_route
 
     async with session_factory() as session:
-        if chosen_route == "graph":
-            chunks = await graph_retriever.retrieve(session, question, history or [])
-            if not chunks:
-                # Defensive fallback (not the judge's job, see judge.py): an empty
-                # graph hit is the clearest signal that vector search is more likely
-                # to be useful for this question.
-                logger.info("orchestrator: graph retrieval empty for question, falling back to vector")
-                chunks, query_embedding_model = await vector_retriever.retrieve(session, question)
-                route_used = "graph->vector"
-        else:
-            chunks, query_embedding_model = await vector_retriever.retrieve(session, question)
+        chunks, query_embedding_model = await vector_retriever.retrieve(session, question)
 
     retrieval_seconds = time.perf_counter() - started
     retrieval_ms = retrieval_seconds * 1000

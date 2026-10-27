@@ -10,6 +10,15 @@
 
 ---
 
+> **GraphRAG отключён** (спецификация `2026-10-27-notebook-pipeline-design`). Код графа остаётся
+> в репозитории, но не поддерживается, не импортируется из `app.main` и не вызывается.
+> Модули с пометкой `DISABLED` в docstring: `app/graph/*` (кроме `embeddings.py` — это общий
+> клиент embedding-svc), `app/ontology/*`, `app/api/graph_admin.py`, `app/retrieval/graph_retriever.py`,
+> `cli/*`. Маршрутов `/internal/graph/*` нет, `graph_build_api_enabled=False`, `judge_mode` удалён,
+> поиск всегда векторный. Проверка при старте покрывает только `library.chunk_embeddings.embedding`;
+> колонка `graph.entities.name_embedding` (VECTOR(1024)) с `EMBEDDING_DIM` не сверяется.
+> Разделы ниже про граф описывают отключённое поведение; полная переработка README — отдельной задачей.
+
 ## Оглавление
 
 - [0. Статус](#0-статус)

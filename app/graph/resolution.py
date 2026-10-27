@@ -1,4 +1,6 @@
-"""Entity resolution / aliasing (offline graph-builder + online query pipeline both
+"""DISABLED: GraphRAG отключён (спецификация 2026-10-27-notebook-pipeline-design). Код не поддерживается и не вызывается.
+
+Entity resolution / aliasing (offline graph-builder + online query pipeline both
 call this — same "resolve a name string to a graph.entities row" logic either way).
 
 Resolution order, per the migration plan: exact/normalized alias match first (cheap,

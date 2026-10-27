@@ -1,4 +1,6 @@
-"""Shared ontology-extraction module (requirement: ONE implementation used both by the
+"""DISABLED: GraphRAG отключён (спецификация 2026-10-27-notebook-pipeline-design). Код не поддерживается и не вызывается.
+
+Shared ontology-extraction module (requirement: ONE implementation used both by the
 offline graph-builder, over chunk windows, and the online query pipeline, over the
 user's question — never two separate copies of this logic).
 

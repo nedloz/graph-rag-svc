@@ -77,13 +77,10 @@ class Settings(BaseSettings):
     entity_similarity_threshold: float = 0.86
     graph_traversal_max_hops: int = 2
 
-    # Retrieval routing: always_graph | always_vector | heuristic
-    judge_mode: str = "always_graph"
-
     # Запуск пересборки графа через HTTP (/internal/graph/build). В прод-среде отключается:
     # пересборка меняет ответы сразу у обеих команд, поэтому кнопка не должна быть доступна
     # случайно (README, §12.3, вопрос 11). CLI-запуск флагом не ограничивается.
-    graph_build_api_enabled: bool = True
+    graph_build_api_enabled: bool = False
 
 
 settings = Settings()

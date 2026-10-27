@@ -1,4 +1,6 @@
-"""Offline graph-building pipeline: library.chunks -> shared ontology extractor ->
+"""DISABLED: GraphRAG отключён (спецификация 2026-10-27-notebook-pipeline-design). Код не поддерживается и не вызывается.
+
+Offline graph-building pipeline: library.chunks -> shared ontology extractor ->
 entity resolution -> graph storage. Invoked via cli/build_graph.py; also the module the
 future automated-rebuild-on-document-update work (deferred, see README) would call into.
 """

@@ -1,4 +1,6 @@
-"""One-time importer for research/chunks_part_1.jsonl (triplets already extracted by
+"""DISABLED: GraphRAG отключён (спецификация 2026-10-27-notebook-pipeline-design). Код не поддерживается и не вызывается.
+
+One-time importer for research/chunks_part_1.jsonl (triplets already extracted by
 the original notebook) — resolution + storage only, extraction is skipped since the
 triplets already exist.
 

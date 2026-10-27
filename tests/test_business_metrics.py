@@ -24,48 +24,37 @@ async def session_factory():
     yield object()
 
 
-def run_retrieve(monkeypatch, *, route, graph, vector):
-    async def graph_retrieve(*_args):
-        return graph
-
+def run_retrieve(monkeypatch, *, vector):
     async def vector_retrieve(*_args):
         return vector, "bge-m3"
 
-    monkeypatch.setattr(orchestrator.judge, "route", lambda *_a: route)
-    monkeypatch.setattr(orchestrator.graph_retriever, "retrieve", graph_retrieve)
     monkeypatch.setattr(orchestrator.vector_retriever, "retrieve", vector_retrieve)
     return asyncio.run(orchestrator.retrieve(session_factory, "вопрос", {}))
 
 
-def test_graph_route_with_hits_is_counted_with_chunks_and_stage_time(monkeypatch):
-    decisions = sample("pochemuchnik_judge_decisions_total", route="graph")
+def test_vector_route_with_hits_is_counted_with_chunks_and_stage_time(monkeypatch):
+    decisions = sample("pochemuchnik_judge_decisions_total", route="vector")
     stage = sample("pochemuchnik_stage_duration_seconds_count", stage="retrieval")
     chunks_count = sample("pochemuchnik_context_chunks_count")
     chunks_sum = sample("pochemuchnik_context_chunks_sum")
 
-    run_retrieve(monkeypatch, route="graph", graph=[chunk(), chunk()], vector=[])
+    run_retrieve(monkeypatch, vector=[chunk(), chunk()])
 
-    assert sample("pochemuchnik_judge_decisions_total", route="graph") == decisions + 1
+    assert sample("pochemuchnik_judge_decisions_total", route="vector") == decisions + 1
     assert sample("pochemuchnik_stage_duration_seconds_count", stage="retrieval") == stage + 1
     assert sample("pochemuchnik_context_chunks_count") == chunks_count + 1
     assert sample("pochemuchnik_context_chunks_sum") == chunks_sum + 2
 
 
-def test_empty_graph_falls_back_to_vector_and_is_counted_as_graph_to_vector(monkeypatch):
-    before = sample("pochemuchnik_judge_decisions_total", route="graph_to_vector")
-    run_retrieve(monkeypatch, route="graph", graph=[], vector=[chunk()])
-    assert sample("pochemuchnik_judge_decisions_total", route="graph_to_vector") == before + 1
-
-
 def test_no_chunks_at_all_counts_empty_context(monkeypatch):
     before = sample("pochemuchnik_empty_context_total")
-    run_retrieve(monkeypatch, route="vector", graph=[], vector=[])
+    run_retrieve(monkeypatch, vector=[])
     assert sample("pochemuchnik_empty_context_total") == before + 1
 
 
 def test_found_context_does_not_count_as_empty(monkeypatch):
     before = sample("pochemuchnik_empty_context_total")
-    run_retrieve(monkeypatch, route="vector", graph=[], vector=[chunk()])
+    run_retrieve(monkeypatch, vector=[chunk()])
     assert sample("pochemuchnik_empty_context_total") == before
 
 

@@ -1,4 +1,6 @@
-"""Postgres-backed graph read/write API. Both the offline graph-builder and the online
+"""DISABLED: GraphRAG отключён (спецификация 2026-10-27-notebook-pipeline-design). Код не поддерживается и не вызывается.
+
+Postgres-backed graph read/write API. Both the offline graph-builder and the online
 retrieval pipeline go through this module rather than issuing raw queries of their own.
 
 Writes are upserts keyed on the tables' natural-key UNIQUE constraints

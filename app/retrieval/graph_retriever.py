@@ -1,4 +1,6 @@
-"""Online graph-RAG retrieval: extract entities from the question (via the shared
+"""DISABLED: GraphRAG отключён (спецификация 2026-10-27-notebook-pipeline-design). Код не поддерживается и не вызывается.
+
+Online graph-RAG retrieval: extract entities from the question (via the shared
 ontology extractor, same module the offline builder uses), resolve them against
 graph.entities, do a bounded breadth-first traversal of graph.relations, and map the
 reached entities back to their source chunks. The Postgres-only stand-in for

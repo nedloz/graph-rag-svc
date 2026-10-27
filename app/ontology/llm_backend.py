@@ -1,4 +1,6 @@
-"""Non-streaming LLM completion used for ontology extraction — a single JSON response
+"""DISABLED: GraphRAG отключён (спецификация 2026-10-27-notebook-pipeline-design). Код не поддерживается и не вызывается.
+
+Non-streaming LLM completion used for ontology extraction — a single JSON response
 is needed, not a token stream, so this is deliberately simpler than
 app/generation/llm_backends.py (ported from llm-svc), which streams answers.
 

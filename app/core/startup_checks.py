@@ -24,8 +24,9 @@ logger = logging.getLogger("graph-rag-svc.core.startup_checks")
 # Колонки, размерность которых обязана совпадать с моделью эмбеддингов.
 _VECTOR_COLUMNS = (
     ("library.chunk_embeddings", "embedding"),
-    ("graph.entities", "name_embedding"),
 )
+# graph.entities.name_embedding (VECTOR(1024)) намеренно не проверяется: GraphRAG отключён,
+# а EMBEDDING_DIM для векторного поиска по чанкам больше не равен размерности графа.
 
 
 def warn_if_development_only_provider() -> None:
@@ -96,7 +97,7 @@ async def verify_embedding_setup() -> None:
         raise RuntimeError(
             f"Модель '{info.get('model')}' в embedding-svc даёт {service_dim} измерений, "
             f"а EMBEDDING_DIM={settings.embedding_dim}. Смена модели эмбеддингов требует "
-            f"пересчёта всех чанков и полной пересборки графа — см. README, §13.1."
+            f"пересчёта всех чанков — см. README, §13.1."
         )
 
     for schema_table, column in _VECTOR_COLUMNS:
@@ -105,7 +106,7 @@ async def verify_embedding_setup() -> None:
             raise RuntimeError(
                 f"Не удалось определить размерность {schema_table}.{column}: "
                 f"колонка отсутствует или объявлена без размерности. "
-                f"Примените main/infra/db/migrations/002_graph_schema.sql."
+                f"Примените main/infra/db/init/init.sql."
             )
         if column_dim != settings.embedding_dim:
             raise RuntimeError(
