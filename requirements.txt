@@ -12,3 +12,5 @@ pydantic-settings==2.7.1
 
 # torch / transformers / accelerate здесь намеренно нет — они нужны только провайдеру
 # LLM_PROVIDER=local и вынесены в requirements-local.txt. Подробности там же.
+prometheus-client==0.21.1
+prometheus-fastapi-instrumentator==7.0.0

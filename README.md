@@ -1319,3 +1319,18 @@ CRUD по любым таблицам любой схемы. **Решено де
 политикой «кто что может» (`main/infra/mtls`). Модуль одинаков в chat-svc, db-svc,
 graph-rag-svc и ingest-worker, менять его нужно во всех сразу. Включение и проверка —
 `main/infra/pki/README.md`, раздел «mTLS между сервисами».
+
+## Метрики
+
+`GET /metrics` отдаёт Prometheus (за mTLS - только пользователю `prometheus`, политика в `infra/mtls/graph-rag-svc.conf`). Кроме HTTP-метрик (`http_requests_total`, `http_request_duration_seconds`, `http_requests_inprogress`; метка `handler` - шаблон маршрута) сервис отдаёт бизнес-метрики с префиксом `pochemuchnik_`. Код: `app/metrics.py`, тесты: `tests/`. Общая картина и дашборды - `infra/observability/README.md` в корневом репозитории.
+
+| Метрика | Что считает |
+| :-- | :-- |
+| `generate_requests_total{mode}` | принятые запросы `/generate` (`sync`, `ws_bridge`) |
+| `judge_decisions_total{route}` | маршрут поиска: `graph`, `vector`, `graph_to_vector` (пустой граф, откат на вектор) |
+| `stage_duration_seconds{stage}` | `retrieval`, `generation` |
+| `context_chunks` | число чанков в контексте |
+| `empty_context_total` | запросы, для которых не нашлось ни одного чанка |
+| `llm_errors_total` | ошибки генерации от провайдера LLM |
+| `retrieval_failures_total` | сбои поиска контекста |
+

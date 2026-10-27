@@ -2,6 +2,7 @@ import logging
 
 from fastapi import FastAPI
 
+from app.metrics import setup_metrics
 from app.api.graph_admin import router as graph_admin_router
 from app.api.http import router as http_router
 from app.core.config import settings
@@ -16,6 +17,7 @@ configure_logging()
 logger = logging.getLogger("graph-rag-svc.main")
 
 app = FastAPI(title=settings.app_name)
+setup_metrics(app)
 app.include_router(http_router)
 app.include_router(graph_admin_router)
 

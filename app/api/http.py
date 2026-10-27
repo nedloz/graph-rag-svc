@@ -3,6 +3,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.metrics import GENERATE_REQUESTS
 from app.api.schemas import CancelRequest, GenerateRequest
 from app.core.config import settings
 from app.core.internal_auth import require_internal_service
@@ -43,6 +44,8 @@ async def generate(req: GenerateRequest, caller: str = Depends(require_internal_
     """
     if job_queue.queue.full():
         raise HTTPException(status_code=429, detail="queue is full")
+
+    GENERATE_REQUESTS.labels(mode=req.response_mode).inc()
 
     # Чей это трафик — берём из проверенного заголовка, а не из тела запроса.
     req.consumer = caller

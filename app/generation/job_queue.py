@@ -11,11 +11,13 @@ changes to consume it.
 import asyncio
 import json
 import logging
+import time
 from contextlib import suppress
 from typing import Any
 
 import websockets
 
+from app.metrics import LLM_ERRORS, RETRIEVAL_FAILURES, STAGE_DURATION
 from app.analytics import retrieval_log
 from app.api.schemas import GenerateRequest
 from app.core.config import settings
@@ -214,24 +216,30 @@ async def process_job(job: GenerateRequest, sink: Sink, cancel_event: asyncio.Ev
     try:
         job.rag = await retrieve(SessionLocal, job.question, job.profile or {}, job.history)
     except Exception as exc:
+        RETRIEVAL_FAILURES.inc()
         logger.exception("Retrieval failed for request %s", job.request_id)
         await retrieval_log.record(job, status="error", error=f"retrieval: {exc}")
         raise RuntimeError("Не удалось получить контекст для ответа") from exc
 
     usage: dict[str, Any] = {}
     messages = build_messages(job)
-    async for event in stream_model(messages, usage=usage):
-        if cancel_event is not None and cancel_event.is_set():
-            logger.info("Генерация %s отменена пользователем", job.request_id)
-            await sink.cancelled(job, usage)
-            await retrieval_log.record(job, usage, status="cancelled")
-            return
-        if event["type"] == "chunk":
-            await sink.chunk(job, event["content"])
-        elif event["type"] == "error":
-            await sink.error(job, event["content"])
-            await retrieval_log.record(job, usage, status="error", error=f"generation: {event['content']}")
-            return
+    generation_started = time.perf_counter()
+    try:
+        async for event in stream_model(messages, usage=usage):
+            if cancel_event is not None and cancel_event.is_set():
+                logger.info("Генерация %s отменена пользователем", job.request_id)
+                await sink.cancelled(job, usage)
+                await retrieval_log.record(job, usage, status="cancelled")
+                return
+            if event["type"] == "chunk":
+                await sink.chunk(job, event["content"])
+            elif event["type"] == "error":
+                LLM_ERRORS.inc()
+                await sink.error(job, event["content"])
+                await retrieval_log.record(job, usage, status="error", error=f"generation: {event['content']}")
+                return
+    finally:
+        STAGE_DURATION.labels(stage="generation").observe(time.perf_counter() - generation_started)
 
     await sink.completed(job, usage)
     await retrieval_log.record(job, usage)

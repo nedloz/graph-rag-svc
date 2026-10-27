@@ -7,6 +7,7 @@ import time
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.metrics import CONTEXT_CHUNKS, EMPTY_CONTEXT, JUDGE_DECISIONS, STAGE_DURATION
 from app.api.schemas import HistoryMessage
 from app.retrieval import context_assembler, graph_retriever, judge, vector_retriever
 
@@ -37,7 +38,13 @@ async def retrieve(
         else:
             chunks, query_embedding_model = await vector_retriever.retrieve(session, question)
 
-    retrieval_ms = (time.perf_counter() - started) * 1000
+    retrieval_seconds = time.perf_counter() - started
+    retrieval_ms = retrieval_seconds * 1000
+    JUDGE_DECISIONS.labels(route=route_used.replace("->", "_to_")).inc()
+    STAGE_DURATION.labels(stage="retrieval").observe(retrieval_seconds)
+    CONTEXT_CHUNKS.observe(len(chunks))
+    if not chunks:
+        EMPTY_CONTEXT.inc()
     return context_assembler.assemble(
         chunks,
         retrieval_ms=retrieval_ms,
