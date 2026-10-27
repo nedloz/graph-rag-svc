@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, Double, ForeignKey, Integer, Text, func
+from sqlalchemy import Boolean, DateTime, Double, ForeignKey, Integer, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, REAL, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -96,7 +96,9 @@ class LibraryDocument(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     title: Mapped[str] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(Text)
     ingest_status: Mapped[str | None] = mapped_column(Text)
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class LibraryChunk(Base):
@@ -106,6 +108,7 @@ class LibraryChunk(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("library.documents.id"))
     chunk_index: Mapped[int] = mapped_column(Integer)
+    section_path: Mapped[str | None] = mapped_column(Text)
     text: Mapped[str] = mapped_column(Text)
 
 
@@ -118,6 +121,46 @@ class LibraryChunkEmbedding(Base):
     # Имя модели, которой посчитан вектор. Поиск обязан фильтровать по нему: векторы разных
     # моделей лежат в разных пространствах и несравнимы между собой (README, §13.1).
     embedding_model: Mapped[str] = mapped_column(Text)
+
+
+class LibraryQuickAnswer(Base):
+    """Готовый ответ на частый вопрос (миграция 011); отдаётся без LLM."""
+
+    __tablename__ = "quick_answers"
+    __table_args__ = {"schema": "library"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    question: Mapped[str] = mapped_column(Text)
+    answer: Mapped[str] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean)
+
+
+class LibraryQuickAnswerVariant(Base):
+    """Формулировка вопроса быстрого ответа. `text` хранится уже нормализованным
+    (app/pipeline/text.py::normalize_variant), `embedding` досчитывает ingest-worker."""
+
+    __tablename__ = "quick_answer_variants"
+    __table_args__ = {"schema": "library"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    quick_answer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("library.quick_answers.id"))
+    text: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
+    embedding_model: Mapped[str | None] = mapped_column(Text)
+
+
+class LibraryLink(Base):
+    """Полезная ссылка: подмешивается в ответ по близости описания к вопросу (миграция 011)."""
+
+    __tablename__ = "links"
+    __table_args__ = {"schema": "library"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    description: Mapped[str] = mapped_column(Text)
+    url: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
+    embedding_model: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean)
 
 
 class CurationBlocklist(Base):

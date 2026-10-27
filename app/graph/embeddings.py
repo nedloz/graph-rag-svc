@@ -16,30 +16,33 @@ from app.core.config import settings
 from app.mtls import httpx_kwargs
 
 
-async def embed_texts_with_model(texts: list[str]) -> tuple[list[list[float]], str]:
+async def embed_texts_with_model(texts: list[str], kind: str = "passage") -> tuple[list[list[float]], str]:
+    """Векторы и имя модели. `kind` — `passage` (документ) или `query` (поисковый запрос):
+    префикс модели (`passage: ` / `query: ` у E5) ставит embedding-svc, здесь его добавлять нельзя.
+    """
     if not texts:
         return [], ""
 
     async with httpx.AsyncClient(timeout=60.0, **httpx_kwargs()) as client:
         response = await client.post(
             f"{settings.embedding_svc_url.rstrip('/')}/embed",
-            json={"texts": texts, "normalize": True},
+            json={"texts": texts, "normalize": True, "kind": kind},
         )
         response.raise_for_status()
         data = response.json()
     return data["embeddings"], data["model"]
 
 
-async def embed_texts(texts: list[str]) -> list[list[float]]:
-    embeddings, _ = await embed_texts_with_model(texts)
+async def embed_texts(texts: list[str], kind: str = "passage") -> list[list[float]]:
+    embeddings, _ = await embed_texts_with_model(texts, kind=kind)
     return embeddings
 
 
-async def embed_text(text: str) -> list[float]:
-    embeddings = await embed_texts([text])
+async def embed_text(text: str, kind: str = "passage") -> list[float]:
+    embeddings = await embed_texts([text], kind=kind)
     return embeddings[0]
 
 
-async def embed_text_with_model(text: str) -> tuple[list[float], str]:
-    embeddings, model = await embed_texts_with_model([text])
+async def embed_text_with_model(text: str, kind: str = "passage") -> tuple[list[float], str]:
+    embeddings, model = await embed_texts_with_model([text], kind=kind)
     return embeddings[0], model
