@@ -920,7 +920,7 @@ POST /generate
 {
   "question": "Как получить справку об обучении?",   // единственное обязательное поле
 
-  "response_mode": "sync",              // "sync" | "stream" | "ws_bridge"  (по умолчанию "sync")
+  "response_mode": "sync",              // "sync" | "ws_bridge"  (по умолчанию "sync"; "stream" не реализован)
 
   "request_id": "...",                  // опц., генерируется сервисом, если не передан
   "user_id": "tg:123456",               // опц., произвольная строка, не обязана быть UUID
@@ -931,15 +931,15 @@ POST /generate
     {"role": "assistant", "content": "..."}
   ],
 
-  "route": "graph",                     // опц., переопределяет JUDGE_MODE на этот запрос (D9)
-  "answer": { "max_chars": 3500 },      // опц., ограничение длины ответа (D4)
-
   "delivery": {                         // обязателен ТОЛЬКО при response_mode = "ws_bridge"
     "assistant_message_id": "...",
     "message_id": "..."
   }
 }
 ```
+
+Поля `route` и `answer.max_chars` из проекта контракта убраны: `GenerateRequest` их не содержит,
+и если клиент их передаст, они молча игнорируются.
 
 Ответ в режиме `sync`:
 
