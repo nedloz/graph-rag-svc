@@ -25,15 +25,19 @@ logger = logging.getLogger("graph-rag-svc.generation.llm_client")
 # Прокси подставляет свой ключ; без непустого значения клиент openai не создаётся.
 _PLACEHOLDER_KEY = "unused"
 _USAGE_FIELDS = ("prompt_tokens", "completion_tokens", "total_tokens")
+# Повторы SDK openai отключены. По умолчанию он повторяет запрос дважды на таймаут и любой
+# ответ >= 500: зависший upstream держал бы одно задание до 3 × read-таймаут, а при
+# LLM_HTTP_CONCURRENCY=1 — всю очередь; в режиме роутера 5xx означал бы до трёх платных
+# запросов. Нужен ли повтор, решает вызывающий.
+_MAX_RETRIES = 0
 
 
 class LlmClient:
     """Реализация `app.pipeline.llm.LlmChat` (+ потоковый ответ) поверх llm-proxy."""
 
-    def __init__(self, base_url: str, model: str, *, max_retries: int = 2) -> None:
+    def __init__(self, base_url: str, model: str) -> None:
         self.base_url = base_url
         self.model = model
-        self.max_retries = max_retries
 
     def _client(self) -> AsyncOpenAI:
         # read-таймаут для стриминга — «столько секунд без единого нового фрагмента»: зависший
@@ -45,7 +49,7 @@ class LlmClient:
             api_key=_PLACEHOLDER_KEY,
             http_client=httpx.AsyncClient(timeout=timeout, **httpx_kwargs()),
             timeout=timeout,
-            max_retries=self.max_retries,
+            max_retries=_MAX_RETRIES,
         )
 
     async def chat(self, messages: list[dict], temperature: float, max_tokens: int) -> tuple[str, int | None]:

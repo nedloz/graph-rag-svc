@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     # Соседняя команда подтвердила, что долгий HTTP-запрос их устраивает (README, §12.3).
     sync_response_timeout_sec: int = 300
 
+    # Пределы длины входа (app/pipeline/limits.py). Длинный ввод обрезается, а не отклоняется:
+    # вопрос — до max_question_chars, каждая реплика истории — до max_history_message_chars,
+    # затем отбрасываются самые старые реплики, пока история не уложится в max_history_chars.
+    max_question_chars: int = 4000
+    max_history_message_chars: int = 4000
+    max_history_chars: int = 24000
+
     # Признаки prompt injection в выбранных чанках всегда пишутся в лог; при true ответ на
     # такой контекст не генерируется (задание завершается ошибкой).
     fail_closed_on_injection: bool = False

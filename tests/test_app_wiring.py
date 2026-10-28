@@ -31,8 +31,7 @@ FORBIDDEN = re.compile(
     r"retrieval import [^\n]*\b(judge|orchestrator)\b|retrieval\.judge|requirements-local|WITH_LOCAL_LLM|"
     r"llm_provider|LLM_PROVIDER|openai_api_key|OPENAI_|openai_model|ollama_url|ollama_model|OLLAMA_|"
     r"transformers_model|TRANSFORMERS_MODEL|settings\.device|^DEVICE=|JUDGE_MODE|warn_if_development_only_provider|"
-    r"settings\.(max_chunk_chars|max_context_chars|max_question_chars|max_history_chars|max_history_message_chars)|"
-    r"^(MAX_CHUNK_CHARS|MAX_CONTEXT_CHARS|MAX_QUESTION_CHARS|MAX_HISTORY_CHARS)=|MAX_HISTORY_CHARS",
+    r"settings\.(max_chunk_chars|max_context_chars)|^#? ?(MAX_CHUNK_CHARS|MAX_CONTEXT_CHARS)=",
     re.MULTILINE,
 )
 

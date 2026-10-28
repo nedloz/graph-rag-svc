@@ -73,7 +73,8 @@ class Proxy:
 
 
 def _client() -> LlmClient:
-    return LlmClient(BASE_URL, "default", max_retries=0)
+    # Боевой путь создания клиента: никаких тестовых переопределений повторов.
+    return LlmClient(BASE_URL, "default")
 
 
 async def _collect(stream) -> list[dict]:
@@ -184,3 +185,49 @@ def test_satisfies_pipeline_protocol():
     expected = inspect.signature(LlmChat.chat)
     actual = inspect.signature(LlmClient.chat)
     assert list(actual.parameters) == list(expected.parameters)
+
+
+# --- Повторы запросов отключены (очередь и платные повторные запросы) ------------------------
+
+
+def test_production_client_is_built_without_retries(monkeypatch):
+    Proxy(monkeypatch, lambda r: httpx.Response(200, json=_completion("ok", None)))
+    created: list = []
+    real = llm_client.AsyncOpenAI
+
+    def capture(**kwargs):
+        client = real(**kwargs)
+        created.append((kwargs, client))
+        return client
+
+    monkeypatch.setattr(llm_client, "AsyncOpenAI", capture)
+
+    asyncio.run(LlmClient(BASE_URL, "default").chat([], temperature=0.0, max_tokens=10))
+
+    ((kwargs, client),) = created
+    assert kwargs["max_retries"] == 0
+    assert client.max_retries == 0
+
+
+def test_503_on_chat_is_one_request_and_raises(monkeypatch):
+    proxy = Proxy(monkeypatch, lambda r: httpx.Response(503, json={"error": {"message": "upstream down"}}))
+    with pytest.raises(Exception):
+        asyncio.run(_client().chat([], temperature=0.0, max_tokens=10))
+    assert len(proxy.requests) == 1
+
+
+def test_503_on_stream_is_one_request_and_one_error_event(monkeypatch):
+    proxy = Proxy(monkeypatch, lambda r: httpx.Response(503, json={"error": {"message": "upstream down"}}))
+    events = asyncio.run(_collect(_client().stream([{"role": "user", "content": "q"}])))
+    assert [e["type"] for e in events] == ["error"]
+    assert len(proxy.requests) == 1
+
+
+def test_read_timeout_is_not_retried(monkeypatch):
+    def hang(request):
+        raise httpx.ReadTimeout("read timed out", request=request)
+
+    proxy = Proxy(monkeypatch, hang)
+    with pytest.raises(Exception):
+        asyncio.run(_client().chat([], temperature=0.0, max_tokens=10))
+    assert len(proxy.requests) == 1

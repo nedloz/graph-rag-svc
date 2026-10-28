@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 import httpx
 import pytest
 
-from app.api.schemas import GenerateRequest
+from app.api.schemas import GenerateRequest, HistoryMessage
 from app.analytics import retrieval_log
 from app.generation import job_queue, llm_client
 from app.generation.llm_client import LlmClient
@@ -128,7 +128,40 @@ def test_retrieval_gets_process_wide_llm_index_and_sessions(monkeypatch):
     env = Env(monkeypatch, result=quick_result())
     job = make_job()
     run(job, RecordingSink())
-    assert env.retrieval_args == [(job, job_queue.llm, job_queue.knowledge_index, job_queue.SessionLocal)]
+    ((seen_job, *deps),) = env.retrieval_args
+    assert deps == [job_queue.llm, job_queue.knowledge_index, job_queue.SessionLocal]
+    assert seen_job.question == job.question
+
+
+def test_retrieval_gets_clamped_question_and_history(monkeypatch, caplog):
+    env = Env(monkeypatch, result=quick_result())
+    long_question = "в" * 10000
+    job = GenerateRequest(
+        question=long_question,
+        history=[HistoryMessage(role="user", content="a" * 10000), HistoryMessage(role="assistant", content="  ")],
+    )
+
+    with caplog.at_level(logging.INFO, logger="graph-rag-svc.generation.job_queue"):
+        run(job, RecordingSink())
+
+    (seen_job, *_rest) = env.retrieval_args[0]
+    assert seen_job.question == "в" * 4000
+    assert [(m.role, m.content) for m in seen_job.history] == [("user", "a" * 4000)]
+    # Аналитика, как и прежде, получает исходный вопрос; длина исходного — в логе.
+    assert job.question == long_question
+    assert len(job.history) == 2
+    assert any("10000" in r.getMessage() for r in caplog.records)
+    # job.rag заполняется у исходного задания — его читают приёмники и аналитика.
+    assert job.rag["route_used"] == "quick_answer"
+
+
+def test_short_request_reaches_retrieval_unchanged(monkeypatch):
+    env = Env(monkeypatch, result=quick_result())
+    job = GenerateRequest(question="Сколько пересдач?", history=[HistoryMessage(role="user", content="привет")])
+    run(job, RecordingSink())
+    (seen_job, *_rest) = env.retrieval_args[0]
+    assert seen_job.question == job.question
+    assert [(m.role, m.content) for m in seen_job.history] == [("user", "привет")]
 
 
 def test_quick_answer_is_sent_without_llm(monkeypatch):
@@ -251,7 +284,7 @@ def test_unreachable_llm_proxy_reaches_sink_error_and_worker_continues(monkeypat
 
     monkeypatch.setattr(llm_client, "httpx_kwargs", lambda: {"transport": httpx.MockTransport(refuse)})
     results = iter([hybrid_result(), quick_result()])
-    env = Env(monkeypatch, llm=LlmClient("http://llm-proxy:8080/v1", "default", max_retries=0))
+    env = Env(monkeypatch, llm=LlmClient("http://llm-proxy:8080/v1", "default"))
 
     async def next_result(job, llm, index, session_factory):
         return next(results)

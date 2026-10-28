@@ -9,6 +9,7 @@ chat-svc needs no changes to consume it.
 """
 
 import asyncio
+import copy
 import json
 import logging
 import time
@@ -34,6 +35,7 @@ from app.generation.llm_client import LlmClient
 from app.generation.sinks import Sink
 from app.mtls import ssl_context
 from app.pipeline.index import KnowledgeIndex
+from app.pipeline.limits import clamp_request
 from app.pipeline.prompts import ANSWER_MAX_TOKENS, ANSWER_TEMPERATURE
 from app.pipeline.rag_payload import build_rag_payload
 from app.pipeline.service import RetrievalResult, run_retrieval
@@ -247,6 +249,34 @@ def _injection_signals(job: GenerateRequest, result: RetrievalResult) -> list[st
     return sorted(set(found))
 
 
+def _clamped(job: GenerateRequest) -> GenerateRequest:
+    """Копия задания с обрезанными вопросом и историей — для пайплайна.
+
+    Само задание не меняется: аналитика, как и раньше, пишет исходный вопрос, а длина
+    обрезанного ввода видна в логе.
+    """
+    history = list(job.history or [])
+    question, clamped_history = clamp_request(job.question, history)
+    if question == job.question and len(clamped_history) == len(history) and all(
+        a is b for a, b in zip(clamped_history, history)
+    ):
+        return job
+    logger.info(
+        "Вход запроса %s обрезан: вопрос %d -> %d символов, история %d -> %d реплик (%d -> %d символов)",
+        job.request_id,
+        len(job.question),
+        len(question),
+        len(history),
+        len(clamped_history),
+        sum(len(m.content) for m in history),
+        sum(len(m.content) for m in clamped_history),
+    )
+    clamped = copy.copy(job)
+    clamped.question = question
+    clamped.history = clamped_history
+    return clamped
+
+
 def _observe_retrieval(result: RetrievalResult, route: str, seconds: float) -> None:
     STAGE_DURATION.labels(stage="retrieval").observe(seconds)
     # Судьи больше нет; метка route — маршрут пайплайна (quick_answer | hybrid), имя метрики
@@ -266,9 +296,10 @@ async def process_job(job: GenerateRequest, sink: Sink, cancel_event: asyncio.Ev
     # Провал ретривала — ошибка всей генерации, а не повод ответить без контекста: ответ на
     # официальный вопрос без источников хуже честной ошибки. Сюда же попадают ошибки вызовов
     # LLM в реранке и переписывании вопроса и ошибки embedding-svc.
+    # Длина входа ограничивается до всех вызовов LLM и BM25 (app/pipeline/limits.py).
     retrieval_started = time.perf_counter()
     try:
-        result = await run_retrieval(job, llm, knowledge_index, SessionLocal)
+        result = await run_retrieval(_clamped(job), llm, knowledge_index, SessionLocal)
     except Exception as exc:
         RETRIEVAL_FAILURES.inc()
         logger.exception("Retrieval failed for request %s", job.request_id)
