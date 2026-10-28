@@ -1,32 +1,42 @@
 """ChatBridge (WS client into chat-svc's /ws/internal/llm) + JobQueue + process_job —
-ported from services/llm-svc/app/main.py, extended with an internal retrieval step
-(app/retrieval/orchestrator.py) that llm-svc never had: previously a separate rag-svc
-called llm-svc's /generate with `rag.chunks` already populated, but rag-svc is gone and
-this service now does its own retrieval before generation (see graph-rag-svc README,
-"Онлайн-пайплайн"). The /ws/internal/llm event contract itself (generation_started /
-stream_chunk / message_completed / message_error) is unchanged, so chat-svc needs no
-changes to consume it.
+ported from services/llm-svc/app/main.py, extended with an internal retrieval step that
+llm-svc never had: previously a separate rag-svc called llm-svc's /generate with
+`rag.chunks` already populated, but rag-svc is gone and this service now does its own
+retrieval before generation. Ретривал — пайплайн ноутбука (app/pipeline), модель — через
+llm-proxy (app/generation/llm_client.py). The /ws/internal/llm event contract itself
+(generation_started / stream_chunk / message_completed / message_error) is unchanged, so
+chat-svc needs no changes to consume it.
 """
 
 import asyncio
 import json
 import logging
 import time
-from contextlib import suppress
+from contextlib import aclosing, suppress
 from typing import Any
 
 import websockets
 
-from app.metrics import LLM_ERRORS, RETRIEVAL_FAILURES, STAGE_DURATION
+from app.metrics import (
+    CONTEXT_CHUNKS,
+    EMPTY_CONTEXT,
+    JUDGE_DECISIONS,
+    LLM_ERRORS,
+    RETRIEVAL_FAILURES,
+    STAGE_DURATION,
+)
 from app.analytics import retrieval_log
 from app.api.schemas import GenerateRequest
 from app.core.config import settings
 from app.db.session import SessionLocal
-from app.generation.llm_backends import stream_model
-from app.generation.prompt_builder import build_messages
+from app.generation.injection_defense import find_prompt_injection_signals
+from app.generation.llm_client import LlmClient
 from app.generation.sinks import Sink
 from app.mtls import ssl_context
-from app.retrieval.orchestrator import retrieve
+from app.pipeline.index import KnowledgeIndex
+from app.pipeline.prompts import ANSWER_MAX_TOKENS, ANSWER_TEMPERATURE
+from app.pipeline.rag_payload import build_rag_payload
+from app.pipeline.service import RetrievalResult, run_retrieval
 
 logger = logging.getLogger("graph-rag-svc.generation.job_queue")
 
@@ -204,6 +214,49 @@ class CancellationRegistry:
 bridge = ChatBridge()
 cancellations = CancellationRegistry()
 job_queue = JobQueue()
+# Индекс базы знаний на весь процесс: загружается и обновляется из app/main.py
+# (app/pipeline/runtime.py), читается каждым заданием через snapshot().
+knowledge_index = KnowledgeIndex()
+# Один объект на процесс, но HTTP-клиент (и контекст mTLS) он создаёт на каждый вызов.
+llm = LlmClient(settings.llm_base_url, settings.llm_model)
+
+
+class InjectionRefused(RuntimeError):
+    """FAIL_CLOSED_ON_INJECTION: в выбранном контексте есть признаки prompt injection."""
+
+
+def _injection_signals(job: GenerateRequest, result: RetrievalResult) -> list[str]:
+    """Проверяет выбранные чанки эвристиками injection_defense и пишет предупреждение по каждому.
+
+    Ответ не меняется: промпт ноутбука сам велит опираться только на материалы. Сигналы нужны,
+    чтобы заметить подозрительный документ в базе, а при FAIL_CLOSED_ON_INJECTION — не отвечать.
+    """
+    found: list[str] = []
+    for item in result.selected:
+        signals = find_prompt_injection_signals(item.text)
+        if not signals:
+            continue
+        found.extend(signals)
+        logger.warning(
+            "Признаки prompt injection (%s) в чанке %s документа «%s», запрос %s",
+            ", ".join(signals),
+            item.chunk_id,
+            item.title,
+            job.request_id,
+        )
+    return sorted(set(found))
+
+
+def _observe_retrieval(result: RetrievalResult, route: str, seconds: float) -> None:
+    STAGE_DURATION.labels(stage="retrieval").observe(seconds)
+    # Судьи больше нет; метка route — маршрут пайплайна (quick_answer | hybrid), имя метрики
+    # прежнее, чтобы не ломать дашборд.
+    JUDGE_DECISIONS.labels(route=route).inc()
+    # Быстрому ответу контекст не нужен — в статистику контекста он не попадает.
+    if result.quick_answer is None:
+        CONTEXT_CHUNKS.observe(len(result.selected))
+        if not result.selected:
+            EMPTY_CONTEXT.inc()
 
 
 async def process_job(job: GenerateRequest, sink: Sink, cancel_event: asyncio.Event | None = None) -> None:
@@ -211,33 +264,61 @@ async def process_job(job: GenerateRequest, sink: Sink, cancel_event: asyncio.Ev
     await sink.started(job)
 
     # Провал ретривала — ошибка всей генерации, а не повод ответить без контекста: ответ на
-    # официальный вопрос без источников хуже честной ошибки, и раньше пользователь никак не
-    # мог отличить одно от другого.
+    # официальный вопрос без источников хуже честной ошибки. Сюда же попадают ошибки вызовов
+    # LLM в реранке и переписывании вопроса и ошибки embedding-svc.
+    retrieval_started = time.perf_counter()
     try:
-        job.rag = await retrieve(SessionLocal, job.question, job.profile or {}, job.history)
+        result = await run_retrieval(job, llm, knowledge_index, SessionLocal)
     except Exception as exc:
         RETRIEVAL_FAILURES.inc()
         logger.exception("Retrieval failed for request %s", job.request_id)
         await retrieval_log.record(job, status="error", error=f"retrieval: {exc}")
         raise RuntimeError("Не удалось получить контекст для ответа") from exc
 
+    job.rag = build_rag_payload(result)
+    _observe_retrieval(result, job.rag["route_used"], time.perf_counter() - retrieval_started)
+
+    # Ретривал теперь сам зовёт LLM и длится секунды: отмену, пришедшую за это время,
+    # учитываем до генерации, а не после первого фрагмента ответа.
+    if cancel_event is not None and cancel_event.is_set():
+        logger.info("Задание %s отменено до генерации", job.request_id)
+        await sink.cancelled(job, {})
+        await retrieval_log.record(job, {}, status="cancelled")
+        return
+
+    # Быстрый ответ — готовый текст из базы, модель не вызывается.
+    if result.quick_answer is not None:
+        await sink.chunk(job, result.quick_answer.answer)
+        await sink.completed(job, {})
+        await retrieval_log.record(job, {})
+        return
+
+    signals = _injection_signals(job, result)
+    if signals and settings.fail_closed_on_injection:
+        error = f"injection: {', '.join(signals)}"
+        await retrieval_log.record(job, status="error", error=error)
+        raise InjectionRefused("Найденный контекст отклонён: признаки prompt injection")
+
     usage: dict[str, Any] = {}
-    messages = build_messages(job)
     generation_started = time.perf_counter()
     try:
-        async for event in stream_model(messages, usage=usage):
-            if cancel_event is not None and cancel_event.is_set():
-                logger.info("Генерация %s отменена пользователем", job.request_id)
-                await sink.cancelled(job, usage)
-                await retrieval_log.record(job, usage, status="cancelled")
-                return
-            if event["type"] == "chunk":
-                await sink.chunk(job, event["content"])
-            elif event["type"] == "error":
-                LLM_ERRORS.inc()
-                await sink.error(job, event["content"])
-                await retrieval_log.record(job, usage, status="error", error=f"generation: {event['content']}")
-                return
+        # aclosing: при отмене поток закрывается сразу, вместе с соединением к llm-proxy.
+        async with aclosing(
+            llm.stream(result.messages, usage=usage, temperature=ANSWER_TEMPERATURE, max_tokens=ANSWER_MAX_TOKENS)
+        ) as events:
+            async for event in events:
+                if cancel_event is not None and cancel_event.is_set():
+                    logger.info("Генерация %s отменена пользователем", job.request_id)
+                    await sink.cancelled(job, usage)
+                    await retrieval_log.record(job, usage, status="cancelled")
+                    return
+                if event["type"] == "chunk":
+                    await sink.chunk(job, event["content"])
+                elif event["type"] == "error":
+                    LLM_ERRORS.inc()
+                    await sink.error(job, event["content"])
+                    await retrieval_log.record(job, usage, status="error", error=f"generation: {event['content']}")
+                    return
     finally:
         STAGE_DURATION.labels(stage="generation").observe(time.perf_counter() - generation_started)
 

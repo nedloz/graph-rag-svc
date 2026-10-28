@@ -15,7 +15,5 @@ rank-bm25==0.2.2
 nltk==3.10.4
 numpy==2.4.6
 
-# torch / transformers / accelerate здесь намеренно нет — они нужны только провайдеру
-# LLM_PROVIDER=local и вынесены в requirements-local.txt. Подробности там же.
 prometheus-client==0.21.1
 prometheus-fastapi-instrumentator==7.0.0

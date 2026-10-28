@@ -28,8 +28,10 @@ GENERATE_REQUESTS = Counter(
 )
 JUDGE_DECISIONS = Counter(
     "pochemuchnik_judge_decisions_total",
-    "Маршрут поиска контекста",
-    ["route"],  # graph | vector | graph_to_vector (пустой граф, сработал откат на вектор)
+    "Маршрут ответа",
+    # quick_answer (готовый ответ без LLM) | hybrid (поиск, реранк, ответ LLM). Судьи больше нет,
+    # имя метрики прежнее, чтобы не ломать дашборд.
+    ["route"],
 )
 STAGE_DURATION = Histogram(
     "pochemuchnik_stage_duration_seconds",

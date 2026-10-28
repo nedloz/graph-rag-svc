@@ -1,12 +1,5 @@
 FROM python:3.11-slim
 
-# Провайдер LLM_PROVIDER=local тянет torch/transformers/accelerate (~5 ГБ колёс nvidia-*),
-# и нужен он только для локальной разработки. По умолчанию их не ставим: образ собирается
-# за пару минут вместо часа. Для сборки с ними:
-#   docker compose build --build-arg WITH_LOCAL_LLM=true graph-rag-svc
-# либо GRAPH_RAG_WITH_LOCAL_LLM=true в main/.env.
-ARG WITH_LOCAL_LLM=false
-
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
@@ -18,11 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt requirements-local.txt ./
-RUN pip install -r requirements.txt && \
-    if [ "$WITH_LOCAL_LLM" = "true" ]; then \
-        pip install -r requirements-local.txt; \
-    fi
+COPY requirements.txt ./
+RUN pip install -r requirements.txt
 
 COPY app ./app
 COPY cli ./cli

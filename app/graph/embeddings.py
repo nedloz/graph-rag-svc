@@ -1,6 +1,6 @@
 """Client for embedding-svc — used to embed entity canonical names for the pgvector
 similarity fallback in entity resolution (app/graph/resolution.py) and to embed the
-question in app/retrieval/vector_retriever.py.
+question and quick-answer lookup text in the notebook pipeline (app/pipeline/service.py).
 
 embedding-svc is the single source of embeddings for the whole system: ingest-worker
 computes chunk vectors through it too. That was not always so — ingest-worker used to load

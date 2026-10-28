@@ -1,61 +1,34 @@
 import asyncio
 import uuid
-from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 from prometheus_client import REGISTRY
 
 from app.api import http as http_api
 from app.generation import job_queue
-from app.retrieval import orchestrator
-from app.retrieval.types import RetrievedChunk
+from app.pipeline.index import Candidate
+from app.pipeline.quick_answers import QuickAnswer
+from app.pipeline.service import RetrievalResult
 
 
 def sample(name: str, **labels) -> float:
     return REGISTRY.get_sample_value(name, labels) or 0.0
 
 
-def chunk() -> RetrievedChunk:
-    return RetrievedChunk(chunk_id=uuid.uuid4(), doc_id=uuid.uuid4(), text="t", score=0.9, source="graph")
+def candidate(idx: int) -> Candidate:
+    return Candidate(idx=idx, chunk_id=uuid.uuid4(), document_id=uuid.uuid4(), chunk_index=idx,
+                     title="Документ", category="", section="", text="t", rerank_score=0.9)
 
 
-@asynccontextmanager
-async def session_factory():
-    yield object()
+def hybrid(selected) -> RetrievalResult:
+    return RetrievalResult(quick_answer=None, messages=[], selected=selected, links=[], rerank_tokens=None,
+                           query_model="e5-base", retrieval_ms=1.0)
 
 
-def run_retrieve(monkeypatch, *, vector):
-    async def vector_retrieve(*_args):
-        return vector, "bge-m3"
-
-    monkeypatch.setattr(orchestrator.vector_retriever, "retrieve", vector_retrieve)
-    return asyncio.run(orchestrator.retrieve(session_factory, "вопрос", {}))
-
-
-def test_vector_route_with_hits_is_counted_with_chunks_and_stage_time(monkeypatch):
-    decisions = sample("pochemuchnik_judge_decisions_total", route="vector")
-    stage = sample("pochemuchnik_stage_duration_seconds_count", stage="retrieval")
-    chunks_count = sample("pochemuchnik_context_chunks_count")
-    chunks_sum = sample("pochemuchnik_context_chunks_sum")
-
-    run_retrieve(monkeypatch, vector=[chunk(), chunk()])
-
-    assert sample("pochemuchnik_judge_decisions_total", route="vector") == decisions + 1
-    assert sample("pochemuchnik_stage_duration_seconds_count", stage="retrieval") == stage + 1
-    assert sample("pochemuchnik_context_chunks_count") == chunks_count + 1
-    assert sample("pochemuchnik_context_chunks_sum") == chunks_sum + 2
-
-
-def test_no_chunks_at_all_counts_empty_context(monkeypatch):
-    before = sample("pochemuchnik_empty_context_total")
-    run_retrieve(monkeypatch, vector=[])
-    assert sample("pochemuchnik_empty_context_total") == before + 1
-
-
-def test_found_context_does_not_count_as_empty(monkeypatch):
-    before = sample("pochemuchnik_empty_context_total")
-    run_retrieve(monkeypatch, vector=[chunk()])
-    assert sample("pochemuchnik_empty_context_total") == before
+def quick() -> RetrievalResult:
+    return RetrievalResult(quick_answer=QuickAnswer(answer="Готовый ответ", question="q", rrf_score=0.05),
+                           messages=[], selected=[], links=[], rerank_tokens=None, query_model="e5-base",
+                           retrieval_ms=1.0)
 
 
 class Sink:
@@ -79,21 +52,76 @@ def make_job():
     return SimpleNamespace(request_id="r1", question="q", profile={}, history=[], rag=None)
 
 
-def patch_pipeline(monkeypatch, events):
-    async def retrieve(*_args):
-        return {"chunks": []}
+class Llm:
+    def __init__(self, events) -> None:
+        self.events = events
 
-    async def stream_model(_messages, usage):
-        for event in events:
+    async def stream(self, _messages, usage=None, temperature=0.3, max_tokens=1100):
+        for event in self.events:
             yield event
+
+
+def patch_pipeline(monkeypatch, events, result=None):
+    async def run_retrieval(*_args):
+        return result if result is not None else hybrid([])
 
     async def record(*_args, **_kwargs):
         pass
 
-    monkeypatch.setattr(job_queue, "retrieve", retrieve)
-    monkeypatch.setattr(job_queue, "build_messages", lambda _job: [])
-    monkeypatch.setattr(job_queue, "stream_model", stream_model)
+    monkeypatch.setattr(job_queue, "run_retrieval", run_retrieval)
+    monkeypatch.setattr(job_queue, "llm", Llm(events))
     monkeypatch.setattr(job_queue.retrieval_log, "record", record)
+
+
+def run_job():
+    asyncio.run(job_queue.process_job(make_job(), Sink()))
+
+
+def test_hybrid_route_with_hits_is_counted_with_chunks_and_stage_time(monkeypatch):
+    patch_pipeline(monkeypatch, [], result=hybrid([candidate(0), candidate(1)]))
+    decisions = sample("pochemuchnik_judge_decisions_total", route="hybrid")
+    stage = sample("pochemuchnik_stage_duration_seconds_count", stage="retrieval")
+    chunks_count = sample("pochemuchnik_context_chunks_count")
+    chunks_sum = sample("pochemuchnik_context_chunks_sum")
+
+    run_job()
+
+    assert sample("pochemuchnik_judge_decisions_total", route="hybrid") == decisions + 1
+    assert sample("pochemuchnik_stage_duration_seconds_count", stage="retrieval") == stage + 1
+    assert sample("pochemuchnik_context_chunks_count") == chunks_count + 1
+    assert sample("pochemuchnik_context_chunks_sum") == chunks_sum + 2
+
+
+def test_quick_answer_is_counted_by_route_without_context_or_generation(monkeypatch):
+    patch_pipeline(monkeypatch, [], result=quick())
+    decisions = sample("pochemuchnik_judge_decisions_total", route="quick_answer")
+    stage = sample("pochemuchnik_stage_duration_seconds_count", stage="retrieval")
+    generation = sample("pochemuchnik_stage_duration_seconds_count", stage="generation")
+    chunks_count = sample("pochemuchnik_context_chunks_count")
+    empty = sample("pochemuchnik_empty_context_total")
+
+    run_job()
+
+    assert sample("pochemuchnik_judge_decisions_total", route="quick_answer") == decisions + 1
+    assert sample("pochemuchnik_stage_duration_seconds_count", stage="retrieval") == stage + 1
+    # Быстрому ответу контекст не нужен: он не считается ни «пустым контекстом», ни генерацией.
+    assert sample("pochemuchnik_stage_duration_seconds_count", stage="generation") == generation
+    assert sample("pochemuchnik_context_chunks_count") == chunks_count
+    assert sample("pochemuchnik_empty_context_total") == empty
+
+
+def test_no_chunks_at_all_counts_empty_context(monkeypatch):
+    patch_pipeline(monkeypatch, [], result=hybrid([]))
+    before = sample("pochemuchnik_empty_context_total")
+    run_job()
+    assert sample("pochemuchnik_empty_context_total") == before + 1
+
+
+def test_found_context_does_not_count_as_empty(monkeypatch):
+    patch_pipeline(monkeypatch, [], result=hybrid([candidate(0)]))
+    before = sample("pochemuchnik_empty_context_total")
+    run_job()
+    assert sample("pochemuchnik_empty_context_total") == before
 
 
 def test_llm_error_event_counts_llm_error_and_generation_stage(monkeypatch):
@@ -101,7 +129,7 @@ def test_llm_error_event_counts_llm_error_and_generation_stage(monkeypatch):
     errors = sample("pochemuchnik_llm_errors_total")
     stage = sample("pochemuchnik_stage_duration_seconds_count", stage="generation")
 
-    asyncio.run(job_queue.process_job(make_job(), Sink()))
+    run_job()
 
     assert sample("pochemuchnik_llm_errors_total") == errors + 1
     assert sample("pochemuchnik_stage_duration_seconds_count", stage="generation") == stage + 1
@@ -110,7 +138,7 @@ def test_llm_error_event_counts_llm_error_and_generation_stage(monkeypatch):
 def test_successful_generation_does_not_count_llm_error(monkeypatch):
     patch_pipeline(monkeypatch, [{"type": "chunk", "content": "ok"}])
     errors = sample("pochemuchnik_llm_errors_total")
-    asyncio.run(job_queue.process_job(make_job(), Sink()))
+    run_job()
     assert sample("pochemuchnik_llm_errors_total") == errors
 
 
@@ -120,15 +148,17 @@ def test_retrieval_failure_is_counted_and_still_raises(monkeypatch):
     async def broken(*_args):
         raise ValueError("db down")
 
-    monkeypatch.setattr(job_queue, "retrieve", broken)
+    monkeypatch.setattr(job_queue, "run_retrieval", broken)
     before = sample("pochemuchnik_retrieval_failures_total")
+    stage = sample("pochemuchnik_stage_duration_seconds_count", stage="retrieval")
     try:
-        asyncio.run(job_queue.process_job(make_job(), Sink()))
+        run_job()
         raised = False
     except RuntimeError:
         raised = True
     assert raised
     assert sample("pochemuchnik_retrieval_failures_total") == before + 1
+    assert sample("pochemuchnik_stage_duration_seconds_count", stage="retrieval") == stage
 
 
 def test_generate_counts_accepted_requests_by_mode(monkeypatch):

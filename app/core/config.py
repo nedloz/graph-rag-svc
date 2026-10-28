@@ -18,22 +18,23 @@ class Settings(BaseSettings):
     chat_ws_url: str = "ws://chat-svc:8000/ws/internal/llm"
     embedding_svc_url: str = "http://embedding-svc:8000"
 
-    # Размерность векторов модели эмбеддингов. Сверяется при запуске и с embedding-svc,
-    # и с фактическим типом колонок в БД (app/core/startup_checks.py) — расхождение
-    # раньше обнаруживалось только в момент вставки/поиска. Смена модели требует
-    # пересчёта всех чанков и всего графа (см. README, §13.1).
-    embedding_dim: int = 1024
+    # Размерность векторов модели эмбеддингов (multilingual-e5-base — 768). Сверяется при
+    # запуске и с embedding-svc, и с фактическим типом колонки library.chunk_embeddings
+    # (app/core/startup_checks.py) — расхождение раньше обнаруживалось только в момент
+    # вставки/поиска. Смена модели требует пересчёта всех чанков (см. README, §13.1).
+    embedding_dim: int = 768
     embedding_startup_retries: int = 30
     embedding_startup_retry_wait_sec: int = 5
 
-    # Generation
-    llm_provider: str = "stub"
-    openai_api_key: str = ""
-    openai_model: str = "gpt-4o-mini"
-    ollama_url: str = "http://ollama:11434"
-    ollama_model: str = "mistral"
-    transformers_model: str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-    device: str = "cpu"
+    # LLM: все вызовы (реранк, переписывание вопроса, ответ) идут в llm-proxy, OpenAI-совместимый
+    # API. Провайдера, модель и ключ выбирает прокси (main/infra/llm-proxy/README.md); сервис шлёт
+    # model "default" и ключ-заглушку. С mTLS-оверлеем адрес — https://llm-proxy:8443/v1.
+    llm_base_url: str = "http://llm-proxy:8080/v1"
+    llm_model: str = "default"
+
+    # Как часто сверять индекс базы знаний (BM25 по чанкам) с базой и перестраивать его, если
+    # набор проиндексированных чанков изменился (app/pipeline/runtime.py).
+    index_refresh_interval_sec: int = 60
 
     llm_http_concurrency: int = 1
     max_queue_size: int = 100
@@ -56,19 +57,14 @@ class Settings(BaseSettings):
     # Соседняя команда подтвердила, что долгий HTTP-запрос их устраивает (README, §12.3).
     sync_response_timeout_sec: int = 300
 
-    # Бюджет истории диалога в промпте. Количество сообщений не ограничено — при превышении
-    # бюджета отбрасываются самые старые реплики.
-    max_history_chars: int = 24000
-    max_history_message_chars: int = 4000
-    # Сколько последних реплик подмешивать в извлечение сущностей, чтобы разрешались
-    # уточняющие и местоименные вопросы («а что насчёт пересдачи по ней же?»).
-    history_messages_for_extraction: int = 4
-
-    max_chunks_to_use: int = 8
-    max_chunk_chars: int = 2500
-    max_context_chars: int = 12000
-    max_question_chars: int = 4000
+    # Признаки prompt injection в выбранных чанках всегда пишутся в лог; при true ответ на
+    # такой контекст не генерируется (задание завершается ошибкой).
     fail_closed_on_injection: bool = False
+
+    # GraphRAG (DISABLED, app/retrieval/graph_retriever.py). Сколько последних реплик
+    # подмешивать в извлечение сущностей и сколько чанков брать из обхода графа.
+    history_messages_for_extraction: int = 4
+    max_chunks_to_use: int = 8
 
     # Ontology extraction (offline graph-builder + online query-time extraction)
     graph_extraction_model: str = ""

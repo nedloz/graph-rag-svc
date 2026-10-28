@@ -29,20 +29,6 @@ _VECTOR_COLUMNS = (
 # а EMBEDDING_DIM для векторного поиска по чанкам больше не равен размерности графа.
 
 
-def warn_if_development_only_provider() -> None:
-    """`LLM_PROVIDER=local` — режим локальной разработки, не для прод-среды.
-
-    Это единственный backend, который грузит модель в процесс самого сервиса, а не в
-    отдельный контейнер: пересборка сервиса заново загружает модель, а память под неё
-    конкурирует с памятью сервиса. Для локальной модели в проде есть `ollama`.
-    """
-    if settings.llm_provider == "local":
-        logger.warning(
-            "LLM_PROVIDER=local: модель грузится в процесс самого сервиса. Это режим локальной "
-            "разработки — в прод-среде с остальными контейнерами используйте LLM_PROVIDER=ollama."
-        )
-
-
 async def _embedding_service_info() -> dict:
     """Опрашивает embedding-svc с повторами: модель грузится не мгновенно."""
     last_error: Exception | None = None

@@ -51,8 +51,8 @@ class GenerateRequest(BaseModel):
     consumer: str | None = Field(default=None, exclude=True)
 
     profile: dict[str, Any] = Field(default_factory=dict)
-    # История диалога. Ограничения на количество сообщений нет: обрабатываются все, пока
-    # суммарно укладываются в MAX_HISTORY_CHARS, иначе отбрасываются самые старые.
+    # История диалога. Принимается любой длины; пайплайн берёт из неё последние реплики
+    # (app/pipeline/prompts.py, app/pipeline/rewrite.py).
     history: list[HistoryMessage] = Field(default_factory=list)
 
     # Ретривал выполняется внутри сервиса; поле заполняется в process_job, а не вызывающей

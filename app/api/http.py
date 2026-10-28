@@ -25,7 +25,7 @@ async def ping():
     return {
         "status": "ok",
         "service": settings.service_name,
-        "llm_provider": settings.llm_provider,
+        "llm_base_url": settings.llm_base_url,
         "chat_bridge_connected": bridge.connected.is_set(),
         "queue_size": job_queue.queue.qsize(),
         "workers": settings.llm_http_concurrency,
