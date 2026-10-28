@@ -2,6 +2,7 @@
 
 import dataclasses
 import json
+import math
 import re
 
 from app.pipeline.index import Candidate
@@ -113,7 +114,11 @@ async def rerank(
             if idx not in candidate_map or idx in seen:
                 continue
             seen.add(idx)
-            result.append(dataclasses.replace(candidate_map[idx], rerank_score=float(row.get("score", 0))))
+            score = float(row.get("score", 0))
+            if not math.isfinite(score):
+                # NaN/Infinity/1e400 json.loads пропускает, но в JSON-ответ и JSONB они не лягут.
+                score = 0.0
+            result.append(dataclasses.replace(candidate_map[idx], rerank_score=score))
 
         for item in candidates:
             if item.idx in seen:

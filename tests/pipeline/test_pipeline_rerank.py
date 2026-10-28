@@ -107,3 +107,15 @@ def test_rerank_cuts_to_top_n():
 
     ranked, _ = _run(FakeLlm(('{"ranked": [{"id": 29, "score": 0.8}]}', None)), candidates, top_n=18)
     assert [c.idx for c in ranked] == [29] + list(range(17))
+
+
+@pytest.mark.parametrize("bad", ["NaN", "Infinity", "-Infinity", '"nan"', "1e400", "-1e400"])
+def test_rerank_non_finite_score_becomes_zero(bad):
+    """json.loads принимает NaN/Infinity/1e400; в ответ и JSONB такая оценка попадать не должна."""
+    candidates = [_cand(10, 0.03), _cand(11, 0.02)]
+    llm = FakeLlm(('{"ranked": [{"id": 11, "score": %s}, {"id": 10, "score": 0.5}]}' % bad, 7))
+
+    ranked, _ = _run(llm, candidates)
+
+    assert [c.idx for c in ranked] == [11, 10]
+    assert [c.rerank_score for c in ranked] == [0.0, 0.5]
