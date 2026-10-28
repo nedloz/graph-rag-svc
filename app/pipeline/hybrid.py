@@ -8,6 +8,9 @@ RRF_K = 60
 CHUNK_DENSE_WEIGHT = 1.0
 CHUNK_LEXICAL_WEIGHT = 0.9
 CHUNK_DENSE_K = 60
+# hnsw.ef_search для dense-запроса: не меньше CHUNK_DENSE_K (см. index.tune_hnsw_scan), с
+# запасом на строки, которые отбросят фильтры по модели и статусу документа.
+CHUNK_DENSE_EF_SEARCH = 200
 CHUNK_LEXICAL_K = 60
 CHUNK_TOP_K = 40
 

@@ -190,3 +190,29 @@ def test_load_sql_filters_indexed_documents():
     assert signature == (0, None)
     for stmt in session.statements:
         assert "indexed" in bound_values(stmt)
+
+
+@pytest.mark.parametrize("k", [60, 500])
+def test_dense_search_tunes_hnsw_before_select_in_same_session(k):
+    # HNSW отдаёт не больше hnsw.ef_search строк, а фильтры по модели/статусу режут уже их:
+    # настройка обязана уйти до SELECT в той же сессии (транзакции) и быть не меньше k.
+    index, _ = _loaded()
+    session = FakeSession([SimpleNamespace(chunk_id=ROWS[0].id, distance=0.1)])
+
+    asyncio.run(index.dense_search(session, [0.1] * 4, "e5-base", k=k))
+
+    (ef_stmt, ef_params), (iter_stmt, iter_params), (select_stmt, _) = session.executed
+    assert "set_config('hnsw.ef_search', :value, true)" in str(ef_stmt)
+    assert int(ef_params["value"]) >= k
+    assert int(ef_params["value"]) >= 200
+    # итеративный обход — только на pgvector >= 0.8, где такой параметр существует
+    assert "hnsw.iterative_scan" in str(iter_stmt) and "extversion" in str(iter_stmt)
+    assert iter_params is None
+    assert select_stmt is session.statements[0]
+    assert k in bound_values(select_stmt)
+
+
+def test_dense_ef_search_constant_covers_dense_k():
+    from app.pipeline.hybrid import CHUNK_DENSE_EF_SEARCH, CHUNK_DENSE_K
+
+    assert CHUNK_DENSE_EF_SEARCH >= CHUNK_DENSE_K

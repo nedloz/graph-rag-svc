@@ -37,13 +37,21 @@ class FakeResult:
 
 
 class FakeSession:
-    """execute() по очереди отдаёт заготовленные наборы строк и запоминает запросы."""
+    """execute() по очереди отдаёт заготовленные наборы строк и запоминает запросы.
+
+    `executed` — все вызовы по порядку (запрос, параметры). Настройки через set_config строк не
+    потребляют и в `statements` не попадают: там только запросы с данными.
+    """
 
     def __init__(self, *results: list) -> None:
         self.results = list(results)
         self.statements: list = []
+        self.executed: list[tuple] = []
 
-    async def execute(self, stmt):
+    async def execute(self, stmt, params=None):
+        self.executed.append((stmt, params))
+        if "set_config" in str(stmt):
+            return FakeResult([])
         self.statements.append(stmt)
         return FakeResult(self.results.pop(0) if self.results else [])
 

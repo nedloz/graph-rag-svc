@@ -18,9 +18,10 @@ from typing import Any
 
 import numpy as np
 from rank_bm25 import BM25Okapi
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.db.models import LibraryChunk, LibraryChunkEmbedding, LibraryDocument
+from app.pipeline.hybrid import CHUNK_DENSE_EF_SEARCH
 from app.pipeline.text import chunk_retrieval_text
 from app.pipeline.tokenize import tokenize
 
@@ -84,6 +85,28 @@ async def fetch_chunks(session) -> list[Any]:
     return list((await session.execute(stmt)).all())
 
 
+# HNSW-индекс library.chunk_embeddings отдаёт не больше hnsw.ef_search строк (по умолчанию 40),
+# а фильтры по модели и ingest_status применяются уже после обхода индекса. Без настройки
+# dense-выдача короче k=60 и не совпадает с точным top-60 ноутбука (FAISS IndexFlatIP).
+_SET_EF_SEARCH = text("SELECT set_config('hnsw.ef_search', :value, true)")
+# Итеративный обход (pgvector >= 0.8) добирает строки, если фильтры отбросили слишком много;
+# strict_order сохраняет точный порядок по расстоянию. На старых версиях параметра нет, а
+# незнакомое имя с префиксом hnsw. после загрузки библиотеки — ошибка, поэтому set_config
+# выполняется только при версии расширения >= 0.8.
+_SET_ITERATIVE_SCAN = text(
+    "SELECT set_config('hnsw.iterative_scan', 'strict_order', true) "
+    "FROM pg_extension WHERE extname = 'vector' "
+    "AND ARRAY[split_part(extversion, '.', 1)::int, split_part(extversion, '.', 2)::int] >= ARRAY[0, 8]"
+)
+
+
+async def tune_hnsw_scan(session, k: int) -> None:
+    """Настройки обхода HNSW на текущую транзакцию (is_local): ef_search не меньше k."""
+    ef_search = max(CHUNK_DENSE_EF_SEARCH, k)
+    await session.execute(_SET_EF_SEARCH, {"value": str(ef_search)})
+    await session.execute(_SET_ITERATIVE_SCAN)
+
+
 class IndexSnapshot:
     """Неизменяемый набор чанков с BM25 и картой соседей."""
 
@@ -139,6 +162,7 @@ class IndexSnapshot:
         """
         if not self.candidates:
             return []
+        await tune_hnsw_scan(session, k)
         distance = LibraryChunkEmbedding.embedding.cosine_distance(query_vector)
         stmt = (
             select(LibraryChunkEmbedding.chunk_id, distance.label("distance"))
