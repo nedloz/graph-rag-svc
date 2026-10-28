@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,7 +35,8 @@ class Settings(BaseSettings):
 
     # Как часто сверять индекс базы знаний (BM25 по чанкам) с базой и перестраивать его, если
     # набор проиндексированных чанков изменился (app/pipeline/runtime.py).
-    index_refresh_interval_sec: int = 60
+    # Нижняя граница 5 с: ноль превратил бы сверку в непрерывные запросы к базе.
+    index_refresh_interval_sec: int = Field(default=60, ge=5)
 
     llm_http_concurrency: int = 1
     max_queue_size: int = 100
